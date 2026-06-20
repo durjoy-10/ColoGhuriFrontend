@@ -18,7 +18,7 @@ import ReviewSection from '../components/engagement/ReviewSection';
 import MapView from '../components/maps/MapView';
 import { formatCurrency } from '../utils/formatters';
 
-const SERVER_BASE_URL = import.meta.env.VITE_SERVER_BASE_URL || 'http://localhost:8000';
+const SERVER_BASE_URL = import.meta.env.VITE_SERVER_BASE_URL || 'https://colo-ghuri-backend.onrender.com';
 
 const DestinationDetail = () => {
     const { id } = useParams();

@@ -9,7 +9,7 @@ import {
 import { formatCurrency } from '../../utils/formatters';
 import WishlistButton from '../engagement/WishlistButton';
 
-const SERVER_BASE_URL = import.meta.env.VITE_SERVER_BASE_URL || 'http://localhost:8000';
+const SERVER_BASE_URL = import.meta.env.VITE_SERVER_BASE_URL || 'https://colo-ghuri-backend.onrender.com';
 
 const DestinationCard = ({ destination }) => {
     const getImageUrl = () => {

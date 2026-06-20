@@ -48,7 +48,7 @@ const Profile = () => {
       if (user.profile_picture) {
         const picUrl = user.profile_picture.startsWith('http') 
           ? user.profile_picture 
-          : `http://127.0.0.1:8000${user.profile_picture}`;
+          : `https://colo-ghuri-backend.onrender.com${user.profile_picture}`;
         setPreviewUrl(picUrl);
       } else {
         setPreviewUrl(null);
@@ -141,7 +141,7 @@ const Profile = () => {
         if (response.data.profile_picture) {
           const picUrl = response.data.profile_picture.startsWith('http')
             ? response.data.profile_picture
-            : `http://127.0.0.1:8000${response.data.profile_picture}`;
+            : `https://colo-ghuri-backend.onrender.com${response.data.profile_picture}`;
           setPreviewUrl(picUrl);
           updatedUser.profile_picture = picUrl;
         }
@@ -154,7 +154,7 @@ const Profile = () => {
       if (user?.profile_picture) {
         const picUrl = user.profile_picture.startsWith('http')
           ? user.profile_picture
-          : `http://127.0.0.1:8000${user.profile_picture}`;
+          : `https://colo-ghuri-backend.onrender.com${user.profile_picture}`;
         setPreviewUrl(picUrl);
       }
     } finally {

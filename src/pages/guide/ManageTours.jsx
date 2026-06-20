@@ -68,7 +68,7 @@ const ManageTours = () => {
         if (imagePath.startsWith('http')) {
             return imagePath;
         }
-        return `http://127.0.0.1:8000${imagePath}`;
+        return `https://colo-ghuri-backend.onrender.com${imagePath}`;
     };
 
     const handleChange = (e) => {

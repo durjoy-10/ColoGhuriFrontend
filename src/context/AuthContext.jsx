@@ -19,7 +19,7 @@ export const AuthProvider = ({ children }) => {
                 try {
                     const parsedUser = JSON.parse(storedUser);
                     if (parsedUser.profile_picture && !parsedUser.profile_picture.startsWith('http')) {
-                        parsedUser.profile_picture = `http://127.0.0.1:8000${parsedUser.profile_picture}`;
+                        parsedUser.profile_picture = `https://colo-ghuri-backend.onrender.com${parsedUser.profile_picture}`;
                     }
                     setUser(parsedUser);
                     axios.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
@@ -42,7 +42,7 @@ export const AuthProvider = ({ children }) => {
             const { access, refresh, user: userData } = response.data;
             
             if (userData.profile_picture && !userData.profile_picture.startsWith('http')) {
-                userData.profile_picture = `http://127.0.0.1:8000${userData.profile_picture}`;
+                userData.profile_picture = `https://colo-ghuri-backend.onrender.com${userData.profile_picture}`;
             }
             
             localStorage.setItem('accessToken', access);
@@ -97,7 +97,7 @@ export const AuthProvider = ({ children }) => {
 
     const updateUser = (updatedUser) => {
         if (updatedUser.profile_picture && !updatedUser.profile_picture.startsWith('http')) {
-            updatedUser.profile_picture = `http://127.0.0.1:8000${updatedUser.profile_picture}`;
+            updatedUser.profile_picture = `https://colo-ghuri-backend.onrender.com${updatedUser.profile_picture}`;
         }
         setUser(updatedUser);
         localStorage.setItem('user', JSON.stringify(updatedUser));
