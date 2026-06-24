@@ -1,17 +1,20 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
-import { FaCreditCard, FaMoneyBillWave, FaPhoneAlt, FaUsers } from 'react-icons/fa';
+import {
+    FaCheckCircle,
+    FaCreditCard,
+    FaMoneyBillWave,
+    FaPhoneAlt,
+    FaSpinner,
+    FaUsers,
+} from 'react-icons/fa';
 
 import axios from '../../api/axios';
-import { useApi } from '../../hooks/useApi';
 import Modal from '../common/Modal';
-import Button from '../common/Button';
 import { formatCurrency } from '../../utils/formatters';
 import { PAYMENT_METHODS } from '../../utils/constants';
 
 const BookingForm = ({ tour, onClose, onCancel, onSuccess }) => {
-    const { post, loading } = useApi();
-
     const [numberOfTravellers, setNumberOfTravellers] = useState(1);
     const [specialRequests, setSpecialRequests] = useState('');
     const [paymentMethod, setPaymentMethod] = useState('bkash');
@@ -19,6 +22,7 @@ const BookingForm = ({ tour, onClose, onCancel, onSuccess }) => {
     const [guideReference, setGuideReference] = useState('');
     const [guideList, setGuideList] = useState([]);
     const [loadingGuides, setLoadingGuides] = useState(false);
+    const [submitting, setSubmitting] = useState(false);
 
     const closeForm = onClose || onCancel || (() => {});
 
@@ -57,8 +61,22 @@ const BookingForm = ({ tour, onClose, onCancel, onSuccess }) => {
 
     const tourId = tour?.tour_id || tour?.id;
     const tourName = tour?.tour_name || tour?.name || tour?.title || 'Tour Package';
-    const finalPrice = Number(tour?.final_price || tour?.finalPrice || tour?.price_per_person || tour?.price || 0);
-    const availableSeats = Number(tour?.available_seats || tour?.availableSeats || 0);
+
+    const finalPrice = Number(
+        tour?.final_price ||
+            tour?.finalPrice ||
+            tour?.price_per_person ||
+            tour?.price ||
+            0
+    );
+
+    const availableSeats = Number(
+        tour?.available_seats ||
+            tour?.availableSeats ||
+            tour?.seats_available ||
+            0
+    );
+
     const totalAmount = Number(numberOfTravellers || 1) * finalPrice;
 
     const isMobilePayment =
@@ -72,6 +90,7 @@ const BookingForm = ({ tour, onClose, onCancel, onSuccess }) => {
         if (isCashPayment) {
             fetchGuideGroupMembers();
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [paymentMethod, tourId]);
 
     const getGuideGroupId = () => {
@@ -86,8 +105,18 @@ const BookingForm = ({ tour, onClose, onCancel, onSuccess }) => {
     const fetchGuideGroupMembers = async () => {
         if (guideMembers.length > 0) {
             const formatted = guideMembers.map((guide) => ({
-                id: guide.guide_id || guide.id || guide.user_id || guide.email || guide.username,
-                name: guide.name || guide.full_name || guide.username || guide.email || 'Guide Member',
+                id:
+                    guide.guide_id ||
+                    guide.id ||
+                    guide.user_id ||
+                    guide.email ||
+                    guide.username,
+                name:
+                    guide.name ||
+                    guide.full_name ||
+                    guide.username ||
+                    guide.email ||
+                    'Guide Member',
                 username: guide.username || guide.email || guide.name || '',
                 phone_number: guide.phone_number || guide.phone || '',
             }));
@@ -112,8 +141,18 @@ const BookingForm = ({ tour, onClose, onCancel, onSuccess }) => {
             const activeGuides = guides
                 .filter((guide) => guide.is_active !== false)
                 .map((guide) => ({
-                    id: guide.guide_id || guide.id || guide.user_id || guide.email || guide.username,
-                    name: guide.name || guide.full_name || guide.username || guide.email || 'Guide Member',
+                    id:
+                        guide.guide_id ||
+                        guide.id ||
+                        guide.user_id ||
+                        guide.email ||
+                        guide.username,
+                    name:
+                        guide.name ||
+                        guide.full_name ||
+                        guide.username ||
+                        guide.email ||
+                        'Guide Member',
                     username: guide.username || guide.email || guide.name || '',
                     phone_number: guide.phone_number || guide.phone || '',
                 }));
@@ -129,6 +168,11 @@ const BookingForm = ({ tour, onClose, onCancel, onSuccess }) => {
 
     const validateForm = () => {
         const travellers = Number(numberOfTravellers);
+
+        if (!tourId) {
+            toast.error('Tour ID not found.');
+            return false;
+        }
 
         if (!travellers || travellers < 1) {
             toast.error('Please enter a valid number of travellers.');
@@ -163,7 +207,9 @@ const BookingForm = ({ tour, onClose, onCancel, onSuccess }) => {
     const handleSubmit = async (event) => {
         event.preventDefault();
 
-        if (!validateForm()) return;
+        if (!validateForm() || submitting) return;
+
+        setSubmitting(true);
 
         const bookingData = {
             tour: tourId,
@@ -176,27 +222,51 @@ const BookingForm = ({ tour, onClose, onCancel, onSuccess }) => {
         };
 
         try {
-            await post('/tours/book/', bookingData, false);
+            await axios.post('/tours/book/', bookingData);
 
             toast.success('Booking submitted successfully.');
 
-            if (onSuccess) {
-                onSuccess();
-            } else {
-                closeForm();
+            closeForm();
+
+            if (typeof onSuccess === 'function') {
+                try {
+                    await onSuccess();
+                } catch (refreshError) {
+                    console.error('Booking refresh error:', refreshError);
+                }
             }
         } catch (error) {
             console.error('Booking submit error:', error);
 
             const data = error.response?.data;
 
-            toast.error(
+            const message =
                 data?.error ||
-                    data?.message ||
-                    data?.detail ||
-                    'Failed to submit booking.'
-            );
+                data?.message ||
+                data?.detail ||
+                formatBackendError(data) ||
+                'Failed to submit booking.';
+
+            toast.error(message);
+        } finally {
+            setSubmitting(false);
         }
+    };
+
+    const formatBackendError = (data) => {
+        if (!data || typeof data !== 'object') return '';
+
+        const firstKey = Object.keys(data)[0];
+
+        if (!firstKey) return '';
+
+        const value = data[firstKey];
+
+        if (Array.isArray(value)) {
+            return `${firstKey}: ${value[0]}`;
+        }
+
+        return `${firstKey}: ${value}`;
     };
 
     return (
@@ -433,24 +503,32 @@ const BookingForm = ({ tour, onClose, onCancel, onSuccess }) => {
                 </div>
 
                 <div className="flex flex-col gap-3 pt-3 sm:flex-row">
-                    <Button
+                    <button
                         type="button"
-                        variant="secondary"
                         onClick={closeForm}
-                        fullWidth
-                        disabled={loading}
+                        disabled={submitting}
+                        className="flex-1 rounded-2xl border border-primary-100 px-5 py-3 font-bold text-primary-700 transition hover:bg-primary-50 disabled:opacity-60"
                     >
                         Cancel
-                    </Button>
+                    </button>
 
-                    <Button
+                    <button
                         type="submit"
-                        variant="primary"
-                        loading={loading}
-                        fullWidth
+                        disabled={submitting}
+                        className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-primary-600 px-5 py-3 font-bold text-white transition hover:bg-primary-700 disabled:opacity-60"
                     >
-                        Confirm Booking
-                    </Button>
+                        {submitting ? (
+                            <>
+                                <FaSpinner className="animate-spin" />
+                                Submitting...
+                            </>
+                        ) : (
+                            <>
+                                <FaCheckCircle />
+                                Confirm Booking
+                            </>
+                        )}
+                    </button>
                 </div>
             </form>
         </Modal>
