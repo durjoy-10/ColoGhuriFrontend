@@ -1,285 +1,492 @@
-import React, { useState, useEffect } from 'react';
-import { useApi } from '../../hooks/useApi';
-import Modal from '../common/Modal';
-import Button from '../common/Button';
-import { formatCurrency } from '../../utils/formatters';
-import { PAYMENT_METHODS } from '../../utils/constants';
+import React, { useMemo, useState } from 'react';
+import {
+    FaCheckCircle,
+    FaCreditCard,
+    FaMoneyBillWave,
+    FaPhoneAlt,
+    FaSpinner,
+    FaUsers,
+} from 'react-icons/fa';
 import toast from 'react-hot-toast';
+
 import axios from '../../api/axios';
 
-const BookingForm = ({ tour, onClose, onSuccess }) => {
-    const { post, loading } = useApi();
+const BookingForm = ({ tour, onSuccess, onClose, onCancel }) => {
     const [numberOfTravellers, setNumberOfTravellers] = useState(1);
-    const [specialRequests, setSpecialRequests] = useState('');
     const [paymentMethod, setPaymentMethod] = useState('bkash');
-    const [transactionId, setTransactionId] = useState('');
+    const [paymentId, setPaymentId] = useState('');
     const [guideReference, setGuideReference] = useState('');
-    const [guideList, setGuideList] = useState([]);
-    const [loadingGuides, setLoadingGuides] = useState(false);
+    const [specialRequests, setSpecialRequests] = useState('');
+    const [submitting, setSubmitting] = useState(false);
 
-    const totalAmount = numberOfTravellers * parseFloat(tour.final_price);
+    const closeForm = onClose || onCancel || (() => {});
 
-    useEffect(() => {
-        if (paymentMethod === 'cash') {
-            fetchGuideGroupMembers();
+    const guideGroup = useMemo(() => {
+        if (tour?.guide_group_details && typeof tour.guide_group_details === 'object') {
+            return tour.guide_group_details;
         }
-    }, [paymentMethod, tour]);
 
-    const fetchGuideGroupMembers = async () => {
-        setLoadingGuides(true);
-        try {
-            const guideGroupId = tour.guide_group?.guide_group_id || tour.guide_group;
-
-            if (!guideGroupId) {
-                setGuideList([]);
-                return;
-            }
-
-            const response = await axios.get(`/guides/groups/${guideGroupId}/`);
-            const guides = response.data?.guides || [];
-
-            const activeGuides = guides
-                .filter((guide) => guide.is_active !== false)
-                .map((guide) => ({
-                    id: guide.guide_id || guide.id,
-                    name: guide.name || guide.username || 'Unnamed Guide',
-                    username: guide.username || '',
-                }));
-
-            setGuideList(activeGuides);
-        } catch (error) {
-            console.error('Error fetching guides:', error);
-            toast.error('Failed to load guide list');
-            setGuideList([]);
-        } finally {
-            setLoadingGuides(false);
+        if (tour?.guide_group && typeof tour.guide_group === 'object') {
+            return tour.guide_group;
         }
+
+        return {};
+    }, [tour]);
+
+    const guideMembers = useMemo(() => {
+        if (Array.isArray(guideGroup?.guides)) return guideGroup.guides;
+        if (Array.isArray(tour?.guides)) return tour.guides;
+        if (Array.isArray(tour?.guide_members)) return tour.guide_members;
+        return [];
+    }, [guideGroup, tour]);
+
+    const guideGroupName =
+        guideGroup?.guide_groupname ||
+        guideGroup?.name ||
+        tour?.guide_group_name ||
+        'Guide Group';
+
+    const guideGroupPhone =
+        guideGroup?.phone_number ||
+        guideGroup?.phone ||
+        tour?.guide_group_phone ||
+        tour?.guide_phone ||
+        'Not provided';
+
+    const finalPrice = Number(
+        tour?.final_price ||
+            tour?.finalPrice ||
+            tour?.discount_price ||
+            tour?.price ||
+            0
+    );
+
+    const availableSeats = Number(
+        tour?.available_seats ||
+            tour?.availableSeats ||
+            tour?.max_travellers ||
+            0
+    );
+
+    const totalAmount = Number(numberOfTravellers || 1) * finalPrice;
+
+    const isMobilePayment =
+        paymentMethod === 'bkash' || paymentMethod === 'nagad';
+
+    const isCashPayment = paymentMethod === 'cash';
+
+    const formatCurrency = (amount) => {
+        return `BDT ${Number(amount || 0).toLocaleString('en-BD')}`;
+    };
+
+    const getTourId = () => {
+        return tour?.tour_id || tour?.id;
+    };
+
+    const getTourName = () => {
+        return tour?.tour_name || tour?.name || tour?.title || 'Tour Package';
+    };
+
+    const getGuideLabel = (guide) => {
+        return (
+            guide?.name ||
+            guide?.username ||
+            guide?.full_name ||
+            guide?.email ||
+            'Guide Member'
+        );
+    };
+
+    const getGuideValue = (guide) => {
+        return String(
+            guide?.guide_id ||
+                guide?.id ||
+                guide?.email ||
+                guide?.username ||
+                getGuideLabel(guide)
+        );
     };
 
     const validateForm = () => {
-        if (numberOfTravellers > tour.available_seats) {
-            toast.error(`Only ${tour.available_seats} seats available`);
+        const travellerCount = Number(numberOfTravellers);
+
+        if (!travellerCount || travellerCount < 1) {
+            toast.error('Please enter valid number of travellers.');
             return false;
         }
 
-        if (paymentMethod === 'bkash' || paymentMethod === 'nagad' || paymentMethod === 'rocket') {
-            if (!transactionId || transactionId.trim() === '') {
-                toast.error(`Please enter ${paymentMethod.toUpperCase()} Transaction ID`);
-                return false;
-            }
-            if (transactionId.length < 6) {
-                toast.error('Invalid Transaction ID');
-                return false;
-            }
+        if (availableSeats > 0 && travellerCount > availableSeats) {
+            toast.error(`Only ${availableSeats} seats are available.`);
+            return false;
         }
 
-        if (paymentMethod === 'cash') {
-            if (!guideReference || guideReference.trim() === '') {
-                toast.error('Please select a guide reference');
-                return false;
-            }
+        if (isMobilePayment && paymentId.trim().length < 6) {
+            toast.error(
+                `Please enter a valid ${paymentMethod.toUpperCase()} Transaction ID.`
+            );
+            return false;
+        }
+
+        if (isCashPayment && !guideReference.trim()) {
+            toast.error('Please select or enter a guide reference.');
+            return false;
         }
 
         return true;
     };
 
-    const handleSubmit = async (e) => {
-        e.preventDefault();
+    const handleSubmit = async (event) => {
+        event.preventDefault();
 
-        if (!validateForm()) {
-            return;
-        }
+        if (!validateForm()) return;
 
-        const bookingData = {
-            tour: tour.tour_id,
-            number_of_travellers: numberOfTravellers,
-            total_amount: totalAmount,
-            special_requests: specialRequests,
-            payment_method: paymentMethod,
-        };
+        setSubmitting(true);
 
-        if (paymentMethod === 'bkash' || paymentMethod === 'nagad' || paymentMethod === 'rocket') {
-            bookingData.payment_id = transactionId;
-        }
+        try {
+            await axios.post('/tours/book/', {
+                tour: getTourId(),
+                number_of_travellers: Number(numberOfTravellers),
+                total_amount: totalAmount.toFixed(2),
+                payment_method: paymentMethod,
+                payment_id: isMobilePayment ? paymentId.trim() : '',
+                guide_reference: isCashPayment ? guideReference.trim() : '',
+                special_requests: specialRequests.trim(),
+            });
 
-        if (paymentMethod === 'cash') {
-            bookingData.guide_reference = guideReference;
-        }
+            toast.success('Booking submitted successfully.');
 
-        const result = await post('/tours/book/', bookingData);
-        if (result) {
-            toast.success('Booking successful!');
-            onSuccess();
+            if (onSuccess) {
+                onSuccess();
+            }
+
+            closeForm();
+        } catch (error) {
+            console.error('Booking submit error:', error);
+
+            const data = error.response?.data;
+
+            const message =
+                data?.error ||
+                data?.message ||
+                data?.detail ||
+                'Failed to submit booking.';
+
+            toast.error(message);
+        } finally {
+            setSubmitting(false);
         }
     };
 
     return (
-        <Modal isOpen={true} onClose={onClose} title="Book Tour" size="md">
-            <form onSubmit={handleSubmit} className="space-y-4">
-                <div className="bg-gradient-to-r from-primary-50 to-secondary-50 p-4 rounded-lg">
-                    <h3 className="font-semibold text-gray-800">{tour.tour_name}</h3>
-                    <p className="text-sm text-gray-600 mt-1">
-                        Price per person: {formatCurrency(tour.final_price)}
-                    </p>
-                    <p className="text-xs text-gray-500 mt-1">
-                        Available seats: {tour.available_seats}
-                    </p>
-                </div>
+        <form onSubmit={handleSubmit} className="space-y-5">
+            <div className="rounded-2xl border border-primary-100 bg-gradient-to-r from-primary-50 to-secondary-50 p-4">
+                <h3 className="text-lg font-extrabold text-gray-900">
+                    {getTourName()}
+                </h3>
 
-                <div>
-                    <label className="block text-gray-700 mb-2 font-medium">
-                        Number of Travellers <span className="text-red-500">*</span>
-                    </label>
+                <p className="mt-1 text-sm font-medium text-gray-600">
+                    Price per person: {formatCurrency(finalPrice)}
+                </p>
+
+                <p className="mt-1 text-xs text-gray-500">
+                    Available seats: {availableSeats || 'Not specified'}
+                </p>
+
+                <div className="mt-4 rounded-2xl border border-primary-100 bg-white/90 p-4">
+                    <div className="flex items-start gap-3">
+                        <div className="flex h-11 w-11 items-center justify-center rounded-full bg-primary-100 text-primary-700">
+                            <FaPhoneAlt />
+                        </div>
+
+                        <div className="flex-1">
+                            <p className="text-xs font-bold uppercase tracking-wide text-gray-500">
+                                Guide Group Contact
+                            </p>
+
+                            <p className="mt-1 text-sm font-extrabold text-gray-900">
+                                {guideGroupName}
+                            </p>
+
+                            <p className="mt-1 text-base font-extrabold text-primary-700">
+                                📞 {guideGroupPhone}
+                            </p>
+
+                            <p className="mt-1 text-xs leading-5 text-gray-500">
+                                This is the phone number of the guide group that
+                                created this tour. Traveller can use this number
+                                for payment or tour-related communication.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div>
+                <label className="mb-2 block text-sm font-bold text-gray-700">
+                    Number of Travellers
+                </label>
+
+                <div className="relative">
+                    <FaUsers className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
+
                     <input
                         type="number"
                         min="1"
-                        max={tour.available_seats}
+                        max={availableSeats || undefined}
                         value={numberOfTravellers}
-                        onChange={(e) => setNumberOfTravellers(parseInt(e.target.value))}
-                        className="input-field"
+                        onChange={(event) =>
+                            setNumberOfTravellers(event.target.value)
+                        }
+                        className="w-full rounded-2xl border border-gray-300 px-4 py-3 pl-12 text-sm outline-none transition focus:border-primary-500 focus:ring-4 focus:ring-primary-100"
                         required
                     />
-                    <p className="text-sm text-gray-500 mt-1">
-                        Max: {tour.available_seats} seats available
-                    </p>
                 </div>
+            </div>
 
-                <div>
-                    <label className="block text-gray-700 mb-2 font-medium">
-                        Payment Method <span className="text-red-500">*</span>
-                    </label>
-                    <div className="grid grid-cols-2 gap-3">
-                        {PAYMENT_METHODS.map(method => (
-                            <label
-                                key={method}
-                                className={`flex items-center gap-2 p-3 border rounded-lg cursor-pointer transition-all duration-300 ${
-                                    paymentMethod === method
-                                        ? 'border-primary-500 bg-primary-50 shadow-md'
-                                        : 'border-gray-300 hover:border-gray-400 hover:bg-gray-50'
-                                }`}
-                            >
-                                <input
-                                    type="radio"
-                                    name="paymentMethod"
-                                    value={method}
-                                    checked={paymentMethod === method}
-                                    onChange={(e) => setPaymentMethod(e.target.value)}
-                                    className="text-primary-600"
-                                />
-                                <span className="capitalize font-medium">{method}</span>
-                            </label>
-                        ))}
+            <div>
+                <label className="mb-2 block text-sm font-bold text-gray-700">
+                    Payment Method
+                </label>
+
+                <div className="grid grid-cols-3 gap-3">
+                    <PaymentOption
+                        label="bKash"
+                        value="bkash"
+                        selected={paymentMethod === 'bkash'}
+                        onClick={() => {
+                            setPaymentMethod('bkash');
+                            setGuideReference('');
+                        }}
+                    />
+
+                    <PaymentOption
+                        label="Nagad"
+                        value="nagad"
+                        selected={paymentMethod === 'nagad'}
+                        onClick={() => {
+                            setPaymentMethod('nagad');
+                            setGuideReference('');
+                        }}
+                    />
+
+                    <PaymentOption
+                        label="Cash"
+                        value="cash"
+                        selected={paymentMethod === 'cash'}
+                        onClick={() => {
+                            setPaymentMethod('cash');
+                            setPaymentId('');
+                        }}
+                    />
+                </div>
+            </div>
+
+            {isMobilePayment && (
+                <div className="rounded-2xl border border-primary-100 bg-primary-50/60 p-4">
+                    <div className="flex items-start gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary-600 text-white">
+                            <FaCreditCard />
+                        </div>
+
+                        <div className="flex-1">
+                            <h4 className="font-extrabold text-gray-900">
+                                {paymentMethod.toUpperCase()} Payment Instruction
+                            </h4>
+
+                            <p className="mt-2 text-sm text-gray-600">
+                                Send money to this guide group number:
+                            </p>
+
+                            <p className="mt-1 text-lg font-extrabold text-primary-700">
+                                {guideGroupPhone}
+                            </p>
+
+                            <p className="mt-2 text-xs leading-5 text-gray-500">
+                                After sending payment, enter the Transaction ID
+                                below.
+                            </p>
+                        </div>
                     </div>
-                </div>
 
-                {(paymentMethod === 'bkash' || paymentMethod === 'nagad' || paymentMethod === 'rocket') && (
-                    <div className="animate-fade-in">
-                        <label className="block text-gray-700 mb-2 font-medium">
-                            {paymentMethod.toUpperCase()} Transaction ID <span className="text-red-500">*</span>
+                    <div className="mt-4">
+                        <label className="mb-2 block text-sm font-bold text-gray-700">
+                            Transaction ID / Payment ID
                         </label>
+
                         <input
                             type="text"
-                            value={transactionId}
-                            onChange={(e) => setTransactionId(e.target.value)}
-                            className="input-field"
-                            placeholder={`Enter your ${paymentMethod.toUpperCase()} transaction ID`}
+                            value={paymentId}
+                            onChange={(event) => setPaymentId(event.target.value)}
+                            placeholder="Enter transaction ID"
+                            className="w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm outline-none transition focus:border-primary-500 focus:ring-4 focus:ring-primary-100"
                             required
                         />
-                        <p className="text-xs text-gray-500 mt-1">
-                            Example: {paymentMethod.toUpperCase()}7F8G9H0J1K
-                        </p>
                     </div>
-                )}
+                </div>
+            )}
 
-                {paymentMethod === 'cash' && (
-                    <div className="animate-fade-in">
-                        <label className="block text-gray-700 mb-2 font-medium">
-                            Guide Reference <span className="text-red-500">*</span>
+            {isCashPayment && (
+                <div className="rounded-2xl border border-amber-100 bg-amber-50 p-4">
+                    <div className="flex items-start gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-500 text-white">
+                            <FaMoneyBillWave />
+                        </div>
+
+                        <div className="flex-1">
+                            <h4 className="font-extrabold text-gray-900">
+                                Cash Payment Instruction
+                            </h4>
+
+                            <p className="mt-2 text-sm font-semibold text-gray-700">
+                                Guide Group Phone: {guideGroupPhone}
+                            </p>
+
+                            <p className="mt-2 text-xs leading-5 text-gray-500">
+                                Traveller can pay directly to the guide group at
+                                the start of the tour. Select or enter guide
+                                reference for tracking.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div className="mt-4">
+                        <label className="mb-2 block text-sm font-bold text-gray-700">
+                            Guide Reference
                         </label>
-                        {loadingGuides ? (
-                            <div className="flex items-center gap-2 p-3 border rounded-lg bg-gray-50">
-                                <div className="animate-spin rounded-full h-4 w-4 border-2 border-primary-600 border-t-transparent"></div>
-                                <span className="text-sm text-gray-500">Loading guides...</span>
-                            </div>
-                        ) : (
+
+                        {guideMembers.length > 0 ? (
                             <select
                                 value={guideReference}
-                                onChange={(e) => setGuideReference(e.target.value)}
-                                className="input-field"
+                                onChange={(event) =>
+                                    setGuideReference(event.target.value)
+                                }
+                                className="w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm outline-none transition focus:border-primary-500 focus:ring-4 focus:ring-primary-100"
                                 required
                             >
-                                <option value="">Select a guide</option>
-                                {guideList.map(guide => (
-                                    <option key={guide.id} value={guide.username}>
-                                        {guide.name} (@{guide.username})
+                                <option value="">Select guide reference</option>
+
+                                {guideMembers.map((guide) => (
+                                    <option
+                                        key={getGuideValue(guide)}
+                                        value={getGuideValue(guide)}
+                                    >
+                                        {getGuideLabel(guide)}
+                                        {guide?.phone_number
+                                            ? ` - ${guide.phone_number}`
+                                            : ''}
                                     </option>
                                 ))}
                             </select>
+                        ) : (
+                            <input
+                                type="text"
+                                value={guideReference}
+                                onChange={(event) =>
+                                    setGuideReference(event.target.value)
+                                }
+                                placeholder="Enter guide reference"
+                                className="w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm outline-none transition focus:border-primary-500 focus:ring-4 focus:ring-primary-100"
+                                required
+                            />
                         )}
-                        <p className="text-xs text-gray-500 mt-1">
-                            Select the guide who referred you or who will accompany you
-                        </p>
-                    </div>
-                )}
-
-                <div>
-                    <label className="block text-gray-700 mb-2 font-medium">Special Requests</label>
-                    <textarea
-                        value={specialRequests}
-                        onChange={(e) => setSpecialRequests(e.target.value)}
-                        className="input-field"
-                        rows="3"
-                        placeholder="Any special requirements? (e.g., vegetarian food, wheelchair access, etc.)"
-                    />
-                </div>
-
-                <div className="p-4 bg-gradient-to-r from-gray-50 to-gray-100 rounded-lg">
-                    <div className="flex justify-between mb-2">
-                        <span className="text-gray-600">Price per person:</span>
-                        <span className="font-semibold">{formatCurrency(tour.final_price)}</span>
-                    </div>
-                    <div className="flex justify-between mb-2">
-                        <span className="text-gray-600">Number of travellers:</span>
-                        <span className="font-semibold">{numberOfTravellers}</span>
-                    </div>
-                    <div className="flex justify-between pt-2 border-t font-bold">
-                        <span className="text-gray-800">Total Amount:</span>
-                        <span className="text-primary-600 text-lg">{formatCurrency(totalAmount)}</span>
                     </div>
                 </div>
+            )}
 
-                {(paymentMethod === 'bkash' || paymentMethod === 'nagad' || paymentMethod === 'rocket') && (
-                    <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
-                        <p className="text-sm text-blue-800 font-medium mb-1">📱 Payment Instructions:</p>
-                        <p className="text-xs text-blue-700">
-                            Send money to this number: <strong className="font-mono">017XXXXXXXX</strong> ({paymentMethod.toUpperCase()})
-                            <br />
-                            After payment, enter the transaction ID above.
-                        </p>
-                    </div>
-                )}
+            <div>
+                <label className="mb-2 block text-sm font-bold text-gray-700">
+                    Special Requests
+                </label>
 
-                {paymentMethod === 'cash' && (
-                    <div className="p-3 bg-yellow-50 rounded-lg border border-yellow-200">
-                        <p className="text-sm text-yellow-800 font-medium mb-1">💰 Cash Payment Instructions:</p>
-                        <p className="text-xs text-yellow-700">
-                            Pay directly to the guide at the start of the tour.
-                            Please select a guide reference for tracking purposes.
-                        </p>
-                    </div>
-                )}
+                <textarea
+                    value={specialRequests}
+                    onChange={(event) => setSpecialRequests(event.target.value)}
+                    rows="3"
+                    placeholder="Any special request..."
+                    className="w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm outline-none transition focus:border-primary-500 focus:ring-4 focus:ring-primary-100"
+                />
+            </div>
 
-                <div className="flex gap-3 pt-4">
-                    <Button type="button" variant="secondary" onClick={onClose} fullWidth>
-                        Cancel
-                    </Button>
-                    <Button type="submit" variant="primary" loading={loading} fullWidth>
-                        Confirm Booking
-                    </Button>
-                </div>
-            </form>
-        </Modal>
+            <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
+                <SummaryRow
+                    label="Price per person"
+                    value={formatCurrency(finalPrice)}
+                />
+                <SummaryRow label="Travellers" value={numberOfTravellers || 1} />
+                <div className="my-3 border-t border-gray-200" />
+                <SummaryRow
+                    label="Total Amount"
+                    value={formatCurrency(totalAmount)}
+                    bold
+                />
+            </div>
+
+            <div className="flex flex-col gap-3 sm:flex-row">
+                <button
+                    type="button"
+                    onClick={closeForm}
+                    disabled={submitting}
+                    className="flex-1 rounded-2xl border border-gray-300 px-5 py-3 font-bold text-gray-700 transition hover:bg-gray-50 disabled:opacity-60"
+                >
+                    Cancel
+                </button>
+
+                <button
+                    type="submit"
+                    disabled={submitting}
+                    className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-primary-600 px-5 py-3 font-bold text-white transition hover:bg-primary-700 disabled:opacity-60"
+                >
+                    {submitting ? (
+                        <>
+                            <FaSpinner className="animate-spin" />
+                            Submitting...
+                        </>
+                    ) : (
+                        <>
+                            <FaCheckCircle />
+                            Submit Booking
+                        </>
+                    )}
+                </button>
+            </div>
+        </form>
     );
 };
+
+const PaymentOption = ({ label, selected, onClick }) => (
+    <button
+        type="button"
+        onClick={onClick}
+        className={`rounded-2xl border px-3 py-3 text-sm font-extrabold transition ${
+            selected
+                ? 'border-primary-600 bg-primary-50 text-primary-700'
+                : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+        }`}
+    >
+        {label}
+    </button>
+);
+
+const SummaryRow = ({ label, value, bold = false }) => (
+    <div className="flex items-center justify-between gap-4 py-1">
+        <span
+            className={`text-sm ${
+                bold ? 'font-extrabold text-gray-900' : 'font-medium text-gray-500'
+            }`}
+        >
+            {label}
+        </span>
+
+        <span
+            className={`text-sm ${
+                bold
+                    ? 'font-extrabold text-primary-700'
+                    : 'font-bold text-gray-800'
+            }`}
+        >
+            {value}
+        </span>
+    </div>
+);
 
 export default BookingForm;
