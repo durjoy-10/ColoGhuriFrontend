@@ -49,6 +49,7 @@ const BookingForm = ({ tour, onSuccess, onClose, onCancel }) => {
     const guideGroupPhone =
         guideGroup?.phone_number ||
         guideGroup?.phone ||
+        tour?.phone_number ||
         tour?.guide_group_phone ||
         tour?.guide_phone ||
         'Not provided';
