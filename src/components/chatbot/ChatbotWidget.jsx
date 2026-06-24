@@ -7,6 +7,7 @@ import {
     FaCheck,
     FaTimesCircle,
     FaSpinner,
+    FaTrash,
 } from 'react-icons/fa';
 import { Link } from 'react-router-dom';
 import axios from '../../api/axios';
@@ -19,70 +20,210 @@ const ChatbotWidget = () => {
     const [input, setInput] = useState('');
     const [loading, setLoading] = useState(false);
     const [pendingAction, setPendingAction] = useState(null);
-
-    const [messages, setMessages] = useState([
-        {
-            sender: 'bot',
-            text: 'Hi, I am PothBondhu, your Colo Ghuri travel assistant. Ask me about destinations, tours, bookings, trips, or dashboard summary.',
-            cards: [],
-            quickReplies: ['Show destinations', 'Show tours', 'Help'],
-        },
-    ]);
+    const [messages, setMessages] = useState([]);
 
     const bottomRef = useRef(null);
 
-    useEffect(() => {
-        bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, [messages, isOpen]);
+    const getUserKey = () => {
+        if (user?.id) return `colo_ghuri_chatbot_history_user_${user.id}`;
+        if (user?.email) return `colo_ghuri_chatbot_history_email_${user.email}`;
+        return 'colo_ghuri_chatbot_history_guest';
+    };
 
-    useEffect(() => {
-        if (!user) return;
+    const getPendingKey = () => {
+        if (user?.id) return `colo_ghuri_chatbot_pending_user_${user.id}`;
+        if (user?.email) return `colo_ghuri_chatbot_pending_email_${user.email}`;
+        return 'colo_ghuri_chatbot_pending_guest';
+    };
+
+    const welcomeMessage = () => ({
+        sender: 'bot',
+        text: 'Hi, I am PothBondhu, your Colo Ghuri travel assistant. Ask me about destinations, tours, bookings, trips, or dashboard summary.',
+        cards: [],
+        quickReplies: ['Show destinations', 'Show tours', 'Help'],
+        createdAt: new Date().toISOString(),
+    });
+
+    const roleMessage = () => {
+        if (!user) return null;
 
         const roleText =
             user.role === 'admin'
-                ? 'You are logged in as Admin. You can ask for admin summary or pending guide groups.'
+                ? 'You are logged in as Admin. You can ask for admin summary, guide verification, destinations, tours, bookings, users, or activity logs.'
                 : user.role === 'guide'
-                    ? 'You are logged in as Guide. You can ask for guide dashboard or pending bookings.'
-                    : 'You are logged in as Traveller. You can ask for your bookings, trips, or budget summary.';
+                    ? 'You are logged in as Guide. You can ask for guide dashboard, tour creation, pending bookings, or revenue summary.'
+                    : 'You are logged in as Traveller. You can ask for your bookings, trips, budget summary, wishlist, destinations, or tours.';
 
-        setMessages((prev) => [
-            prev[0],
-            {
-                sender: 'bot',
-                text: roleText,
-                cards: [],
-                quickReplies:
-                    user.role === 'admin'
-                        ? ['Admin summary', 'Pending guide groups']
-                        : user.role === 'guide'
-                            ? ['Guide dashboard', 'Pending bookings']
-                            : ['My bookings', 'My trips', 'Budget summary'],
-            },
-        ]);
-    }, [user?.id, user?.role]);
+        return {
+            sender: 'bot',
+            text: roleText,
+            cards: [],
+            quickReplies:
+                user.role === 'admin'
+                    ? ['Admin summary', 'Pending guide groups', 'All bookings']
+                    : user.role === 'guide'
+                        ? ['Guide dashboard', 'Pending bookings', 'My revenue']
+                        : ['My bookings', 'My trips', 'Budget summary'],
+            createdAt: new Date().toISOString(),
+        };
+    };
+
+    const safeMessages = (value) => {
+        if (!Array.isArray(value)) return [];
+
+        return value
+            .filter((item) => item && typeof item === 'object')
+            .map((item) => ({
+                sender: item.sender === 'user' ? 'user' : 'bot',
+                text: item.text || '',
+                cards: Array.isArray(item.cards) ? item.cards : [],
+                quickReplies: Array.isArray(item.quickReplies)
+                    ? item.quickReplies
+                    : [],
+                createdAt: item.createdAt || new Date().toISOString(),
+            }))
+            .filter((item) => item.text.trim() !== '');
+    };
+
+    const loadChatHistory = () => {
+        const historyKey = getUserKey();
+        const pendingKey = getPendingKey();
+
+        try {
+            const savedHistory = localStorage.getItem(historyKey);
+            const savedPending = localStorage.getItem(pendingKey);
+
+            let loadedMessages = [];
+
+            if (savedHistory) {
+                loadedMessages = safeMessages(JSON.parse(savedHistory));
+            }
+
+            let loadedPending = null;
+
+            if (savedPending) {
+                loadedPending = JSON.parse(savedPending);
+            }
+
+            if (loadedMessages.length === 0) {
+                const initialMessages = [welcomeMessage()];
+                const roleMsg = roleMessage();
+
+                if (roleMsg) {
+                    initialMessages.push(roleMsg);
+                }
+
+                setMessages(initialMessages);
+            } else {
+                setMessages(loadedMessages);
+            }
+
+            setPendingAction(loadedPending || null);
+        } catch (error) {
+            console.error('Chatbot history load error:', error);
+
+            const initialMessages = [welcomeMessage()];
+            const roleMsg = roleMessage();
+
+            if (roleMsg) {
+                initialMessages.push(roleMsg);
+            }
+
+            setMessages(initialMessages);
+            setPendingAction(null);
+        }
+    };
+
+    const saveChatHistory = (nextMessages = messages, nextPending = pendingAction) => {
+        const historyKey = getUserKey();
+        const pendingKey = getPendingKey();
+
+        try {
+            localStorage.setItem(historyKey, JSON.stringify(nextMessages));
+
+            if (nextPending) {
+                localStorage.setItem(pendingKey, JSON.stringify(nextPending));
+            } else {
+                localStorage.removeItem(pendingKey);
+            }
+        } catch (error) {
+            console.error('Chatbot history save error:', error);
+        }
+    };
+
+    useEffect(() => {
+        loadChatHistory();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [user?.id, user?.email, user?.role]);
+
+    useEffect(() => {
+        if (messages.length > 0) {
+            saveChatHistory(messages, pendingAction);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [messages, pendingAction]);
+
+    useEffect(() => {
+        bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [messages, isOpen, loading]);
+
+    const clearChatHistory = () => {
+        const historyKey = getUserKey();
+        const pendingKey = getPendingKey();
+
+        localStorage.removeItem(historyKey);
+        localStorage.removeItem(pendingKey);
+
+        const initialMessages = [welcomeMessage()];
+        const roleMsg = roleMessage();
+
+        if (roleMsg) {
+            initialMessages.push(roleMsg);
+        }
+
+        setMessages(initialMessages);
+        setPendingAction(null);
+        saveChatHistory(initialMessages, null);
+    };
 
     const addUserMessage = (text) => {
-        setMessages((prev) => [
-            ...prev,
-            {
-                sender: 'user',
-                text,
-                cards: [],
-                quickReplies: [],
-            },
-        ]);
+        const message = {
+            sender: 'user',
+            text,
+            cards: [],
+            quickReplies: [],
+            createdAt: new Date().toISOString(),
+        };
+
+        setMessages((prev) => [...prev, message]);
+    };
+
+    const normalizeCards = (cards) => {
+        if (!Array.isArray(cards)) return [];
+
+        return cards.map((card) => ({
+            title: card.title || '',
+            subtitle: card.subtitle || '',
+            description: card.description || '',
+            meta: Array.isArray(card.meta) ? card.meta : [],
+            url: card.url || card.link || '',
+        }));
     };
 
     const addBotMessage = (data) => {
-        setMessages((prev) => [
-            ...prev,
-            {
-                sender: 'bot',
-                text: data.reply || 'Sorry, I could not process that.',
-                cards: data.cards || [],
-                quickReplies: data.quick_replies || [],
-            },
-        ]);
+        const message = {
+            sender: 'bot',
+            text: data.reply || 'Sorry, I could not process that.',
+            cards: normalizeCards(data.cards),
+            quickReplies: Array.isArray(data.quick_replies)
+                ? data.quick_replies
+                : Array.isArray(data.quickReplies)
+                    ? data.quickReplies
+                    : [],
+            createdAt: new Date().toISOString(),
+        };
+
+        setMessages((prev) => [...prev, message]);
 
         if (data.requires_confirmation && data.pending_action) {
             setPendingAction(data.pending_action);
@@ -108,6 +249,7 @@ const ChatbotWidget = () => {
             addBotMessage(response.data);
         } catch (error) {
             console.error('Chatbot error:', error);
+
             addBotMessage({
                 reply: 'Sorry, the chatbot server is not responding right now.',
                 cards: [],
@@ -134,6 +276,7 @@ const ChatbotWidget = () => {
             setPendingAction(null);
         } catch (error) {
             console.error('Confirm action error:', error);
+
             addBotMessage({
                 reply: 'Sorry, I could not complete the confirmed action.',
                 cards: [],
@@ -148,15 +291,15 @@ const ChatbotWidget = () => {
         addUserMessage('Cancel');
         setPendingAction(null);
 
-        setMessages((prev) => [
-            ...prev,
-            {
-                sender: 'bot',
-                text: 'Okay, I cancelled the action. Nothing was changed.',
-                cards: [],
-                quickReplies: ['Help', 'Show destinations', 'Show tours'],
-            },
-        ]);
+        const cancelMessage = {
+            sender: 'bot',
+            text: 'Okay, I cancelled the action. Nothing was changed.',
+            cards: [],
+            quickReplies: ['Help', 'Show destinations', 'Show tours'],
+            createdAt: new Date().toISOString(),
+        };
+
+        setMessages((prev) => [...prev, cancelMessage]);
     };
 
     const handleSubmit = (e) => {
@@ -197,6 +340,7 @@ const ChatbotWidget = () => {
                             <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center">
                                 <FaRobot className="text-xl" />
                             </div>
+
                             <div>
                                 <h3 className="font-bold leading-tight">PothBondhu</h3>
                                 <p className="text-xs text-white/90">
@@ -207,20 +351,35 @@ const ChatbotWidget = () => {
                             </div>
                         </div>
 
-                        <button
-                            onClick={() => setIsOpen(false)}
-                            className="w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center"
-                            aria-label="Close chatbot"
-                        >
-                            <FaTimes />
-                        </button>
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={clearChatHistory}
+                                className="w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center"
+                                aria-label="Clear chatbot history"
+                                title="Clear chat"
+                            >
+                                <FaTrash className="text-sm" />
+                            </button>
+
+                            <button
+                                onClick={() => setIsOpen(false)}
+                                className="w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center"
+                                aria-label="Close chatbot"
+                            >
+                                <FaTimes />
+                            </button>
+                        </div>
                     </div>
 
                     <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50">
                         {messages.map((message, index) => (
                             <div
-                                key={index}
-                                className={`flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}
+                                key={`${message.createdAt || 'msg'}-${index}`}
+                                className={`flex ${
+                                    message.sender === 'user'
+                                        ? 'justify-end'
+                                        : 'justify-start'
+                                }`}
                             >
                                 <div
                                     className={`max-w-[88%] ${
@@ -278,6 +437,12 @@ const ChatbotWidget = () => {
                                                         </p>
                                                     )}
 
+                                                    {card.description && (
+                                                        <p className="text-xs text-gray-600 mt-1">
+                                                            {card.description}
+                                                        </p>
+                                                    )}
+
                                                     {card.meta && card.meta.length > 0 && (
                                                         <div className="mt-2 space-y-1">
                                                             {card.meta.map((item, metaIndex) => (
@@ -305,19 +470,25 @@ const ChatbotWidget = () => {
                                         </div>
                                     )}
 
-                                    {message.quickReplies && message.quickReplies.length > 0 && (
-                                        <div className="flex flex-wrap gap-2">
-                                            {message.quickReplies.map((reply, replyIndex) => (
-                                                <button
-                                                    key={replyIndex}
-                                                    onClick={() => handleQuickReply(reply)}
-                                                    className="text-xs px-3 py-1.5 rounded-full bg-white border border-primary-200 text-primary-700 hover:bg-primary-50 transition-colors"
-                                                >
-                                                    {reply}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    )}
+                                    {message.quickReplies &&
+                                        message.quickReplies.length > 0 && (
+                                            <div className="flex flex-wrap gap-2">
+                                                {message.quickReplies.map(
+                                                    (reply, replyIndex) => (
+                                                        <button
+                                                            key={replyIndex}
+                                                            onClick={() =>
+                                                                handleQuickReply(reply)
+                                                            }
+                                                            disabled={loading}
+                                                            className="text-xs px-3 py-1.5 rounded-full bg-white border border-primary-200 text-primary-700 hover:bg-primary-50 transition-colors disabled:opacity-50"
+                                                        >
+                                                            {reply}
+                                                        </button>
+                                                    )
+                                                )}
+                                            </div>
+                                        )}
                                 </div>
                             </div>
                         ))}
@@ -327,6 +498,7 @@ const ChatbotWidget = () => {
                                 <p className="text-xs text-yellow-800 font-medium mb-2">
                                     Confirmation required
                                 </p>
+
                                 <div className="flex gap-2">
                                     <button
                                         onClick={confirmPendingAction}
@@ -336,6 +508,7 @@ const ChatbotWidget = () => {
                                         <FaCheck />
                                         Confirm
                                     </button>
+
                                     <button
                                         onClick={cancelPendingAction}
                                         disabled={loading}
@@ -360,7 +533,10 @@ const ChatbotWidget = () => {
                         <div ref={bottomRef} />
                     </div>
 
-                    <form onSubmit={handleSubmit} className="p-3 bg-white border-t border-gray-200">
+                    <form
+                        onSubmit={handleSubmit}
+                        className="p-3 bg-white border-t border-gray-200"
+                    >
                         <div className="flex items-center gap-2">
                             <input
                                 type="text"
