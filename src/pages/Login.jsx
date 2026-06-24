@@ -227,16 +227,6 @@ const Login = () => {
                         </Link>
                     </p>
                 </div>
-
-                {/* Demo Credentials */}
-                <div className="bg-gray-50 px-6 py-4 border-t">
-                    <p className="text-sm text-gray-600 text-center font-medium">Demo Credentials:</p>
-                    <div className="text-xs text-gray-500 text-center mt-1 space-y-1">
-                        <p>👑 Admin: admin / Admin@123</p>
-                        <p>🧳 Traveller: sakib_traveller / traveller123</p>
-                        <p>🗺️ Guide: rahim_guide / guide123</p>
-                    </div>
-                </div>
             </div>
         </div>
     );
