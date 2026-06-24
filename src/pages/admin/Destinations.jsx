@@ -3,6 +3,7 @@ import {
     FaEdit,
     FaEye,
     FaImage,
+    FaImages,
     FaMapMarkerAlt,
     FaPlus,
     FaRedo,
@@ -39,6 +40,12 @@ const emptyForm = {
     image: null,
 };
 
+const emptyImageForm = {
+    image: null,
+    caption: '',
+    is_primary: false,
+};
+
 const AdminDestinations = () => {
     const [destinations, setDestinations] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -51,11 +58,21 @@ const AdminDestinations = () => {
 
     const [showModal, setShowModal] = useState(false);
     const [showViewModal, setShowViewModal] = useState(false);
+    const [showImagesModal, setShowImagesModal] = useState(false);
+
     const [editing, setEditing] = useState(null);
     const [viewing, setViewing] = useState(null);
+    const [imageDestination, setImageDestination] = useState(null);
+    const [destinationImages, setDestinationImages] = useState([]);
+    const [loadingImages, setLoadingImages] = useState(false);
+    const [uploadingImage, setUploadingImage] = useState(false);
+    const [deletingImageId, setDeletingImageId] = useState(null);
 
     const [formData, setFormData] = useState(emptyForm);
     const [previewUrl, setPreviewUrl] = useState('');
+
+    const [imageForm, setImageForm] = useState(emptyImageForm);
+    const [imagePreview, setImagePreview] = useState('');
 
     useEffect(() => {
         fetchDestinations();
@@ -80,54 +97,12 @@ const AdminDestinations = () => {
         });
     }, [destinations, search, typeFilter, popularOnly]);
 
-    const fetchDestinations = async () => {
-        setLoading(true);
-
-        try {
-            const allItems = [];
-            const usedIds = new Set();
-
-            let page = 1;
-            let hasNext = true;
-
-            while (hasNext && page <= 50) {
-                const response = await axios.get('/destinations/', {
-                    params: {
-                        page,
-                        page_size: 100,
-                    },
-                });
-
-                const data = response.data;
-                const items = Array.isArray(data)
-                    ? data
-                    : Array.isArray(data?.results)
-                        ? data.results
-                        : [];
-
-                items.forEach((item) => {
-                    const id = getDestinationId(item);
-                    if (id && !usedIds.has(id)) {
-                        usedIds.add(id);
-                        allItems.push(item);
-                    }
-                });
-
-                hasNext = Boolean(data?.next);
-                page += 1;
-            }
-
-            setDestinations(allItems);
-        } catch (error) {
-            console.error('Destination fetch error:', error);
-            toast.error('Failed to load destinations.');
-        } finally {
-            setLoading(false);
-        }
-    };
-
     const getDestinationId = (destination) => {
         return destination?.destination_id || destination?.id;
+    };
+
+    const getImageId = (image) => {
+        return image?.id || image?.image_id;
     };
 
     const getImageUrl = (path) => {
@@ -153,10 +128,95 @@ const AdminDestinations = () => {
         );
     };
 
+    const getGalleryImageUrl = (image) => {
+        return getImageUrl(image?.image_url || image?.image || '');
+    };
+
+    const normalizeList = (data) => {
+        if (Array.isArray(data)) return data;
+        if (Array.isArray(data?.results)) return data.results;
+        return [];
+    };
+
+    const fetchDestinations = async () => {
+        setLoading(true);
+
+        try {
+            const allItems = [];
+            const usedIds = new Set();
+
+            let page = 1;
+            let hasNext = true;
+
+            while (hasNext && page <= 50) {
+                const response = await axios.get('/destinations/', {
+                    params: {
+                        page,
+                        page_size: 100,
+                    },
+                });
+
+                const data = response.data;
+                const items = normalizeList(data);
+
+                items.forEach((item) => {
+                    const id = getDestinationId(item);
+
+                    if (id && !usedIds.has(id)) {
+                        usedIds.add(id);
+                        allItems.push(item);
+                    }
+                });
+
+                hasNext = Boolean(data?.next);
+                page += 1;
+            }
+
+            setDestinations(allItems);
+        } catch (error) {
+            console.error('Destination fetch error:', error);
+            toast.error('Failed to load destinations.');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const fetchDestinationDetail = async (destinationId) => {
+        const response = await axios.get(`/destinations/${destinationId}/`);
+        return response.data;
+    };
+
+    const fetchDestinationImages = async (destination) => {
+        const destinationId = getDestinationId(destination);
+
+        if (!destinationId) {
+            toast.error('Destination ID not found.');
+            return;
+        }
+
+        setLoadingImages(true);
+
+        try {
+            const detail = await fetchDestinationDetail(destinationId);
+            setImageDestination(detail);
+            setDestinationImages(Array.isArray(detail.images) ? detail.images : []);
+        } catch (error) {
+            console.error('Destination image load error:', error);
+            toast.error('Failed to load destination images.');
+        } finally {
+            setLoadingImages(false);
+        }
+    };
+
     const resetForm = () => {
         setFormData(emptyForm);
         setPreviewUrl('');
         setEditing(null);
+    };
+
+    const resetImageForm = () => {
+        setImageForm(emptyImageForm);
+        setImagePreview('');
     };
 
     const openAddModal = () => {
@@ -187,14 +247,37 @@ const AdminDestinations = () => {
         setShowModal(true);
     };
 
-    const openViewModal = (destination) => {
-        setViewing(destination);
+    const openViewModal = async (destination) => {
+        const id = getDestinationId(destination);
+
+        try {
+            const detail = await fetchDestinationDetail(id);
+            setViewing(detail);
+        } catch {
+            setViewing(destination);
+        }
+
         setShowViewModal(true);
+    };
+
+    const openImagesModal = async (destination) => {
+        setImageDestination(destination);
+        setDestinationImages([]);
+        resetImageForm();
+        setShowImagesModal(true);
+        await fetchDestinationImages(destination);
     };
 
     const closeModal = () => {
         setShowModal(false);
         resetForm();
+    };
+
+    const closeImagesModal = () => {
+        setShowImagesModal(false);
+        setImageDestination(null);
+        setDestinationImages([]);
+        resetImageForm();
     };
 
     const handleChange = (event) => {
@@ -206,7 +289,16 @@ const AdminDestinations = () => {
         }));
     };
 
-    const handleImageChange = (event) => {
+    const handleImageFormChange = (event) => {
+        const { name, type, value, checked } = event.target;
+
+        setImageForm((prev) => ({
+            ...prev,
+            [name]: type === 'checkbox' ? checked : value,
+        }));
+    };
+
+    const handleCoverImageChange = (event) => {
         const file = event.target.files?.[0];
 
         if (!file) return;
@@ -224,6 +316,28 @@ const AdminDestinations = () => {
         const reader = new FileReader();
         reader.onloadend = () => {
             setPreviewUrl(reader.result);
+        };
+        reader.readAsDataURL(file);
+    };
+
+    const handleGalleryImageChange = (event) => {
+        const file = event.target.files?.[0];
+
+        if (!file) return;
+
+        if (!file.type.startsWith('image/')) {
+            toast.error('Please select a valid image file.');
+            return;
+        }
+
+        setImageForm((prev) => ({
+            ...prev,
+            image: file,
+        }));
+
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            setImagePreview(reader.result);
         };
         reader.readAsDataURL(file);
     };
@@ -276,6 +390,22 @@ const AdminDestinations = () => {
         return data;
     };
 
+    const formatBackendError = (data) => {
+        if (!data || typeof data !== 'object') return '';
+
+        const firstKey = Object.keys(data)[0];
+
+        if (!firstKey) return '';
+
+        const value = data[firstKey];
+
+        if (Array.isArray(value)) {
+            return `${firstKey}: ${value[0]}`;
+        }
+
+        return `${firstKey}: ${value}`;
+    };
+
     const handleSubmit = async (event) => {
         event.preventDefault();
 
@@ -326,22 +456,6 @@ const AdminDestinations = () => {
         }
     };
 
-    const formatBackendError = (data) => {
-        if (!data || typeof data !== 'object') return '';
-
-        const firstKey = Object.keys(data)[0];
-
-        if (!firstKey) return '';
-
-        const value = data[firstKey];
-
-        if (Array.isArray(value)) {
-            return `${firstKey}: ${value[0]}`;
-        }
-
-        return `${firstKey}: ${value}`;
-    };
-
     const handleDelete = async (destination) => {
         const id = getDestinationId(destination);
 
@@ -378,6 +492,91 @@ const AdminDestinations = () => {
         }
     };
 
+    const handleUploadGalleryImage = async (event) => {
+        event.preventDefault();
+
+        if (!imageDestination) {
+            toast.error('Destination not selected.');
+            return;
+        }
+
+        if (!imageForm.image) {
+            toast.error('Please select an image.');
+            return;
+        }
+
+        setUploadingImage(true);
+
+        try {
+            const destinationId = getDestinationId(imageDestination);
+
+            const data = new FormData();
+            data.append('destination', destinationId);
+            data.append('image', imageForm.image);
+            data.append('caption', imageForm.caption || '');
+            data.append('is_primary', imageForm.is_primary ? 'true' : 'false');
+
+            await axios.post('/destinations/upload-image/', data, {
+                headers: {
+                    'Content-Type': 'multipart/form-data',
+                },
+            });
+
+            toast.success('Image uploaded successfully.');
+            resetImageForm();
+
+            await fetchDestinationImages({ destination_id: destinationId });
+            await fetchDestinations();
+        } catch (error) {
+            console.error('Image upload error:', error);
+
+            toast.error(
+                error.response?.data?.error ||
+                    error.response?.data?.message ||
+                    'Failed to upload image.'
+            );
+        } finally {
+            setUploadingImage(false);
+        }
+    };
+
+    const handleDeleteGalleryImage = async (image) => {
+        const imageId = getImageId(image);
+
+        if (!imageId) {
+            toast.error('Image ID not found.');
+            return;
+        }
+
+        const ok = window.confirm('Are you sure you want to delete this image?');
+
+        if (!ok) return;
+
+        setDeletingImageId(imageId);
+
+        try {
+            await axios.delete(`/destinations/delete-image/${imageId}/`);
+
+            toast.success('Image deleted successfully.');
+
+            if (imageDestination) {
+                await fetchDestinationImages(imageDestination);
+            }
+
+            await fetchDestinations();
+        } catch (error) {
+            console.error('Image delete error:', error);
+
+            toast.error(
+                error.response?.data?.error ||
+                    error.response?.data?.message ||
+                    'Failed to delete image.'
+            );
+        } finally {
+            setDeletingImageId(null);
+        }
+    };
+
     const clearFilters = () => {
         setSearch('');
         setTypeFilter('');
@@ -410,7 +609,7 @@ const AdminDestinations = () => {
                             Manage Destinations
                         </h1>
                         <p className="mt-2 text-slate-600">
-                            Add, edit, update images, and delete tourist destinations.
+                            Add, edit, delete and manage all destination images.
                         </p>
                     </div>
 
@@ -608,13 +807,13 @@ const AdminDestinations = () => {
                                             </div>
                                         </div>
 
-                                        <div className="mt-5 flex gap-2">
+                                        <div className="mt-5 grid grid-cols-2 gap-2">
                                             <button
                                                 type="button"
                                                 onClick={() =>
                                                     openViewModal(destination)
                                                 }
-                                                className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-slate-100 px-3 py-3 text-sm font-bold text-slate-700 transition hover:bg-slate-200"
+                                                className="flex items-center justify-center gap-2 rounded-2xl bg-slate-100 px-3 py-3 text-sm font-bold text-slate-700 transition hover:bg-slate-200"
                                             >
                                                 <FaEye />
                                                 View
@@ -625,7 +824,7 @@ const AdminDestinations = () => {
                                                 onClick={() =>
                                                     openEditModal(destination)
                                                 }
-                                                className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-blue-50 px-3 py-3 text-sm font-bold text-blue-700 transition hover:bg-blue-100"
+                                                className="flex items-center justify-center gap-2 rounded-2xl bg-blue-50 px-3 py-3 text-sm font-bold text-blue-700 transition hover:bg-blue-100"
                                             >
                                                 <FaEdit />
                                                 Edit
@@ -634,16 +833,28 @@ const AdminDestinations = () => {
                                             <button
                                                 type="button"
                                                 onClick={() =>
+                                                    openImagesModal(destination)
+                                                }
+                                                className="flex items-center justify-center gap-2 rounded-2xl bg-primary-50 px-3 py-3 text-sm font-bold text-primary-700 transition hover:bg-primary-100"
+                                            >
+                                                <FaImages />
+                                                Images
+                                            </button>
+
+                                            <button
+                                                type="button"
+                                                onClick={() =>
                                                     handleDelete(destination)
                                                 }
                                                 disabled={deletingId === id}
-                                                className="flex h-[46px] w-[46px] items-center justify-center rounded-2xl bg-red-50 text-red-600 transition hover:bg-red-100 disabled:opacity-50"
+                                                className="flex items-center justify-center gap-2 rounded-2xl bg-red-50 px-3 py-3 text-sm font-bold text-red-600 transition hover:bg-red-100 disabled:opacity-50"
                                             >
                                                 {deletingId === id ? (
                                                     <div className="h-4 w-4 animate-spin rounded-full border-2 border-red-500 border-t-transparent" />
                                                 ) : (
                                                     <FaTrash />
                                                 )}
+                                                Delete
                                             </button>
                                         </div>
                                     </div>
@@ -758,7 +969,7 @@ const AdminDestinations = () => {
                         <label className="flex cursor-pointer flex-col items-center justify-center rounded-3xl border-2 border-dashed border-primary-200 bg-primary-50/50 px-4 py-8 text-center transition hover:bg-primary-50">
                             <FaUpload className="mb-3 text-3xl text-primary-600" />
                             <p className="font-bold text-primary-700">
-                                Click to upload image
+                                Click to upload cover image
                             </p>
                             <p className="mt-1 text-xs text-slate-500">
                                 PNG, JPG, JPEG supported
@@ -766,7 +977,7 @@ const AdminDestinations = () => {
                             <input
                                 type="file"
                                 accept="image/*"
-                                onChange={handleImageChange}
+                                onChange={handleCoverImageChange}
                                 className="hidden"
                             />
                         </label>
@@ -830,6 +1041,195 @@ const AdminDestinations = () => {
                         </Button>
                     </div>
                 </form>
+            </Modal>
+
+            <Modal
+                isOpen={showImagesModal}
+                onClose={closeImagesModal}
+                title="Manage Destination Images"
+                size="xl"
+            >
+                <div className="space-y-6">
+                    {imageDestination && (
+                        <div className="rounded-2xl bg-slate-50 p-4">
+                            <h3 className="text-lg font-extrabold text-slate-900">
+                                {imageDestination.name}
+                            </h3>
+                            <p className="text-sm text-slate-500">
+                                Upload new images or delete existing images for this destination.
+                            </p>
+                        </div>
+                    )}
+
+                    <form
+                        onSubmit={handleUploadGalleryImage}
+                        className="rounded-3xl border border-primary-100 bg-primary-50/40 p-5"
+                    >
+                        <h4 className="mb-4 text-lg font-extrabold text-slate-900">
+                            Upload New Image
+                        </h4>
+
+                        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                            <div>
+                                <label className="mb-2 block text-sm font-semibold text-slate-800">
+                                    Image File
+                                </label>
+
+                                <label className="flex cursor-pointer flex-col items-center justify-center rounded-3xl border-2 border-dashed border-primary-200 bg-white px-4 py-8 text-center transition hover:bg-primary-50">
+                                    <FaUpload className="mb-3 text-3xl text-primary-600" />
+                                    <p className="font-bold text-primary-700">
+                                        Select image
+                                    </p>
+                                    <p className="mt-1 text-xs text-slate-500">
+                                        PNG, JPG, JPEG supported
+                                    </p>
+                                    <input
+                                        type="file"
+                                        accept="image/*"
+                                        onChange={handleGalleryImageChange}
+                                        className="hidden"
+                                    />
+                                </label>
+                            </div>
+
+                            <div className="space-y-4">
+                                <Input
+                                    label="Caption"
+                                    name="caption"
+                                    value={imageForm.caption}
+                                    onChange={handleImageFormChange}
+                                    placeholder="Optional image caption"
+                                />
+
+                                <label className="flex cursor-pointer items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                                    <input
+                                        type="checkbox"
+                                        name="is_primary"
+                                        checked={imageForm.is_primary}
+                                        onChange={handleImageFormChange}
+                                        className="h-4 w-4"
+                                    />
+                                    <span className="font-semibold text-slate-700">
+                                        Set as primary/cover image
+                                    </span>
+                                </label>
+
+                                {imagePreview && (
+                                    <div className="relative h-32 overflow-hidden rounded-2xl border border-slate-200">
+                                        <img
+                                            src={imagePreview}
+                                            alt="Upload Preview"
+                                            className="h-full w-full object-cover"
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={resetImageForm}
+                                            className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full bg-red-600 text-white"
+                                        >
+                                            <FaTimes />
+                                        </button>
+                                    </div>
+                                )}
+
+                                <Button
+                                    type="submit"
+                                    icon={FaUpload}
+                                    loading={uploadingImage}
+                                    fullWidth
+                                >
+                                    Upload Image
+                                </Button>
+                            </div>
+                        </div>
+                    </form>
+
+                    <div>
+                        <div className="mb-4 flex items-center justify-between">
+                            <h4 className="text-lg font-extrabold text-slate-900">
+                                All Images ({destinationImages.length})
+                            </h4>
+
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                icon={FaRedo}
+                                onClick={() =>
+                                    imageDestination &&
+                                    fetchDestinationImages(imageDestination)
+                                }
+                            >
+                                Refresh Images
+                            </Button>
+                        </div>
+
+                        {loadingImages ? (
+                            <div className="rounded-3xl bg-white p-8">
+                                <LoadingSpinner />
+                            </div>
+                        ) : destinationImages.length === 0 ? (
+                            <div className="rounded-3xl border border-slate-200 bg-white p-10 text-center">
+                                <FaImages className="mx-auto mb-3 text-5xl text-slate-300" />
+                                <p className="font-bold text-slate-700">
+                                    No images uploaded yet.
+                                </p>
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+                                {destinationImages.map((image) => {
+                                    const imageId = getImageId(image);
+                                    const imageUrl = getGalleryImageUrl(image);
+
+                                    return (
+                                        <div
+                                            key={imageId}
+                                            className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-soft"
+                                        >
+                                            <div className="relative h-48 bg-slate-100">
+                                                {imageUrl ? (
+                                                    <img
+                                                        src={imageUrl}
+                                                        alt={image.caption || 'Destination'}
+                                                        className="h-full w-full object-cover"
+                                                    />
+                                                ) : (
+                                                    <div className="flex h-full items-center justify-center">
+                                                        <FaImage className="text-5xl text-slate-300" />
+                                                    </div>
+                                                )}
+
+                                                {image.is_primary && (
+                                                    <span className="absolute left-3 top-3 rounded-full bg-amber-500 px-3 py-1 text-xs font-bold text-white">
+                                                        Primary
+                                                    </span>
+                                                )}
+                                            </div>
+
+                                            <div className="p-4">
+                                                <p className="line-clamp-2 min-h-[40px] text-sm text-slate-600">
+                                                    {image.caption || 'No caption'}
+                                                </p>
+
+                                                <Button
+                                                    variant="danger"
+                                                    size="sm"
+                                                    icon={FaTrash}
+                                                    loading={deletingImageId === imageId}
+                                                    onClick={() =>
+                                                        handleDeleteGalleryImage(image)
+                                                    }
+                                                    fullWidth
+                                                    className="mt-3"
+                                                >
+                                                    Delete Image
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
+                </div>
             </Modal>
 
             <Modal
@@ -900,6 +1300,26 @@ const AdminDestinations = () => {
                             </p>
                         </div>
 
+                        {Array.isArray(viewing.images) &&
+                            viewing.images.length > 0 && (
+                                <div>
+                                    <p className="mb-3 text-sm font-bold text-slate-700">
+                                        Gallery Images
+                                    </p>
+
+                                    <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+                                        {viewing.images.map((image) => (
+                                            <img
+                                                key={getImageId(image)}
+                                                src={getGalleryImageUrl(image)}
+                                                alt={image.caption || viewing.name}
+                                                className="h-28 w-full rounded-2xl object-cover"
+                                            />
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
                         <div className="flex gap-3 border-t border-slate-200 pt-5">
                             <Button
                                 variant="outline"
@@ -911,6 +1331,18 @@ const AdminDestinations = () => {
                                 fullWidth
                             >
                                 Edit
+                            </Button>
+
+                            <Button
+                                variant="outline"
+                                icon={FaImages}
+                                onClick={() => {
+                                    setShowViewModal(false);
+                                    openImagesModal(viewing);
+                                }}
+                                fullWidth
+                            >
+                                Images
                             </Button>
 
                             <Button
