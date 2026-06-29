@@ -34,6 +34,8 @@ const DestinationCard = ({ destination }) => {
                     src={getImageUrl()}
                     alt={destination.name}
                     className="h-full w-full object-cover transition duration-700 group-hover:scale-110"
+                    loading="lazy"
+                    decoding="async"
                     onError={(event) => {
                         event.currentTarget.src = 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=900&q=80';
                     }}

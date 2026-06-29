@@ -29,8 +29,8 @@ const Home = () => {
     const fetchHomeData = async () => {
         try {
             const [destinationsRes, toursRes] = await Promise.all([
-                get('/destinations/', { is_popular: true }, false),
-                get('/tours/', { status: 'upcoming' }, false),
+                get('/destinations/', { is_popular: true, page_size: 6 }, false),
+                get('/tours/', { status: 'upcoming', page_size: 6 }, false),
             ]);
 
             setPopularDestinations(destinationsRes?.results || destinationsRes || []);

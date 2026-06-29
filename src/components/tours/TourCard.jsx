@@ -41,6 +41,8 @@ const TourCard = ({ tour }) => {
                     src={getImageUrl()}
                     alt={tour.tour_name}
                     className="h-full w-full object-cover transition duration-700 group-hover:scale-110"
+                    loading="lazy"
+                    decoding="async"
                     onError={(event) => {
                         event.currentTarget.src = 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=900&q=80';
                     }}

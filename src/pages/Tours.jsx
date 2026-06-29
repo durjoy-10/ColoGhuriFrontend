@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
     FaFilter,
     FaRedo,
@@ -12,24 +12,27 @@ import TourCard from '../components/tours/TourCard';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 import { DESTINATION_TYPES, TOUR_STATUS } from '../utils/constants';
 
+const DEFAULT_FILTERS = {
+    search: '',
+    status: 'upcoming',
+    min_price: '',
+    max_price: '',
+    min_seats: '',
+    destination_type: '',
+    location: '',
+    available_only: true,
+    has_discount: false,
+    ordering: 'newest',
+};
+
 const Tours = () => {
     const { get, loading } = useApi();
+    const requestIdRef = useRef(0);
 
     const [tours, setTours] = useState([]);
     const [showFilters, setShowFilters] = useState(true);
-
-    const [filters, setFilters] = useState({
-        search: '',
-        status: 'upcoming',
-        min_price: '',
-        max_price: '',
-        min_seats: '',
-        destination_type: '',
-        location: '',
-        available_only: true,
-        has_discount: false,
-        ordering: 'newest',
-    });
+    const [filters, setFilters] = useState(DEFAULT_FILTERS);
+    const [debouncedFilters, setDebouncedFilters] = useState(DEFAULT_FILTERS);
 
     const [pagination, setPagination] = useState({
         count: 0,
@@ -40,36 +43,57 @@ const Tours = () => {
     });
 
     useEffect(() => {
+        const timer = setTimeout(() => {
+            setDebouncedFilters(filters);
+        }, 450);
+
+        return () => clearTimeout(timer);
+    }, [filters]);
+
+    useEffect(() => {
         fetchTours();
-    }, [filters, pagination.page]);
+    }, [debouncedFilters, pagination.page]);
 
-    const buildQuery = () => {
-        const params = new URLSearchParams();
+    const buildParams = () => {
+        const params = {
+            page: pagination.page,
+            page_size: pagination.pageSize,
+        };
 
-        params.append('page', pagination.page);
-        params.append('page_size', pagination.pageSize);
-
-        Object.entries(filters).forEach(([key, value]) => {
+        Object.entries(debouncedFilters).forEach(([key, value]) => {
             if (value !== '' && value !== false && value !== null) {
-                params.append(key, value);
+                params[key] = value;
             }
         });
 
-        return params.toString();
+        return params;
     };
 
-    const fetchTours = async () => {
+    const fetchTours = async (options = {}) => {
+        const requestId = requestIdRef.current + 1;
+        requestIdRef.current = requestId;
+
         try {
-            const response = await get(`/tours/?${buildQuery()}`, {}, false);
-            setTours(response.results || response || []);
+            const response = await get('/tours/', buildParams(), false, {
+                cache: options.forceRefresh ? false : true,
+                cacheTtl: 45 * 1000,
+            });
+
+            if (requestId !== requestIdRef.current) return;
+
+            const items = response.results || response || [];
+            setTours(Array.isArray(items) ? items : []);
             setPagination((prev) => ({
                 ...prev,
-                count: response.count || response.length || 0,
-                next: response.next,
-                previous: response.previous,
+                count: response.count || items.length || 0,
+                next: response.next || null,
+                previous: response.previous || null,
             }));
         } catch (error) {
-            console.error('Tours fetch error:', error);
+            if (requestId === requestIdRef.current) {
+                console.error('Tours fetch error:', error);
+                setTours([]);
+            }
         }
     };
 
@@ -80,18 +104,8 @@ const Tours = () => {
 
     const clearFilters = () => {
         setPagination((prev) => ({ ...prev, page: 1 }));
-        setFilters({
-            search: '',
-            status: 'upcoming',
-            min_price: '',
-            max_price: '',
-            min_seats: '',
-            destination_type: '',
-            location: '',
-            available_only: true,
-            has_discount: false,
-            ordering: 'newest',
-        });
+        setFilters(DEFAULT_FILTERS);
+        setDebouncedFilters(DEFAULT_FILTERS);
     };
 
     const totalPages = Math.ceil(pagination.count / pagination.pageSize);
@@ -239,7 +253,7 @@ const Tours = () => {
                     </p>
 
                     <button
-                        onClick={fetchTours}
+                        onClick={() => fetchTours({ forceRefresh: true })}
                         className="inline-flex items-center gap-2 text-sm font-bold text-primary-700"
                     >
                         <FaRedo />
@@ -274,7 +288,7 @@ const Tours = () => {
                             <div className="mt-10 flex justify-center gap-3">
                                 <button
                                     onClick={() => setPagination((prev) => ({ ...prev, page: prev.page - 1 }))}
-                                    disabled={!pagination.previous}
+                                    disabled={!pagination.previous || loading}
                                     className="rounded-2xl border border-slate-300 bg-white px-5 py-3 text-sm font-bold disabled:opacity-50"
                                 >
                                     Previous
@@ -286,7 +300,7 @@ const Tours = () => {
 
                                 <button
                                     onClick={() => setPagination((prev) => ({ ...prev, page: prev.page + 1 }))}
-                                    disabled={!pagination.next}
+                                    disabled={!pagination.next || loading}
                                     className="rounded-2xl border border-slate-300 bg-white px-5 py-3 text-sm font-bold disabled:opacity-50"
                                 >
                                     Next
